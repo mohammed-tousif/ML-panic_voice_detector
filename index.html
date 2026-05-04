@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PanicSense AI — Voice Distress Detector</title>
+  <meta name="description" content="Real-time AI-powered voice distress detection. Upload audio or record live to detect panic in voice." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #06060d;
+      --surface: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #f0f2ff;
+      --muted: #7c84a0;
+      --accent: #7c3aed;
+      --accent2: #a855f7;
+      --danger: #ef4444;
+      --safe: #22c55e;
+      --radius: 20px;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 60px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background blobs */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      width: 600px; height: 600px;
+      background: #7c3aed;
+      top: -200px; left: -200px;
+    }
+    body::after {
+      width: 500px; height: 500px;
+      background: #1d4ed8;
+      bottom: -150px; right: -150px;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 52px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px; height: 64px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      margin-bottom: 20px;
+      box-shadow: 0 0 40px rgba(124,58,237,0.5);
+    }
+
+    .logo-wrap svg { width: 30px; height: 30px; fill: #fff; }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(90deg, #c4b5fd, #818cf8, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-weight: 400;
+    }
+
+    /* ── Cards Grid ─────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      width: 100%;
+      max-width: 820px;
+      position: relative;
+      z-index: 1;
+    }
+
+    @media (max-width: 640px) {
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 1.8rem; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px 28px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .card:hover {
+      border-color: rgba(124,58,237,0.3);
+      box-shadow: 0 0 30px rgba(124,58,237,0.08);
+    }
+
+    .card-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent2);
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .card p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* ── Record Button ─────────────────────── */
+    .mic-wrap {
+      position: relative;
+      width: 100px; height: 100px;
+      margin: 8px 0;
+    }
+
+    .pulse-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid var(--danger);
+      animation: none;
+      opacity: 0;
+      transform: scale(1);
+    }
+
+    .recording .pulse-ring {
+      animation: pulse-out 1.4s ease-out infinite;
+      opacity: 1;
+    }
+
+    @keyframes pulse-out {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(1.9); opacity: 0; }
+    }
+
+    #record-btn {
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, box-shadow 0.3s;
+      box-shadow: 0 0 24px rgba(124,58,237,0.4);
+    }
+
+    #record-btn:hover { transform: scale(1.06); box-shadow: 0 0 36px rgba(124,58,237,0.6); }
+    #record-btn:active { transform: scale(0.97); }
+
+    #record-btn.recording-active {
+      background: linear-gradient(135deg, #b91c1c, #ef4444);
+      box-shadow: 0 0 24px rgba(239,68,68,0.5);
+    }
+
+    #record-btn svg { width: 28px; height: 28px; fill: #fff; transition: opacity 0.2s; }
+
+    .mic-icon, .stop-icon { position: absolute; }
+    .stop-icon { opacity: 0; }
+    #record-btn.recording-active .mic-icon  { opacity: 0; }
+    #record-btn.recording-active .stop-icon { opacity: 1; }
+
+    /* ── Timer ──────────────────────────────── */
+    .timer {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      height: 20px;
+    }
+
+    .timer.active { color: var(--danger); }
+
+    /* ── Waveform ───────────────────────────── */
+    #waveform {
+      width: 100%;
+      height: 50px;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    #waveform.visible { opacity: 1; }
+
+    /* ── Upload Zone ────────────────────────── */
+    .upload-zone {
+      width: 100%;
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      padding: 32px 20px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      transition: border-color 0.25s, background 0.25s;
+      position: relative;
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent2);
+      background: rgba(124,58,237,0.06);
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-zone svg { width: 36px; height: 36px; fill: var(--accent2); opacity: 0.7; }
+
+    .upload-zone span {
+      font-size: 0.83rem;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .upload-zone .file-name {
+      font-size: 0.82rem;
+      color: var(--accent2);
+      font-weight: 500;
+      word-break: break-all;
+      text-align: center;
+    }
+
+    /* ── Loading Spinner ────────────────────── */
+    .spinner-wrap {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .spinner-wrap.show { display: flex; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent2);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner-wrap p { font-size: 0.83rem; color: var(--muted); }
+
+    /* ── Result Panel ───────────────────────── */
+    #result {
+      width: 100%;
+      max-width: 820px;
+      margin-top: 28px;
+      position: relative;
+      z-index: 1;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s;
+      pointer-events: none;
+    }
+
+    #result.show {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .result-card {
+      border-radius: var(--radius);
+      padding: 36px 32px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      border: 1px solid transparent;
+      backdrop-filter: blur(16px);
+    }
+
+    .result-card.distress {
+      background: rgba(239,68,68,0.08);
+      border-color: rgba(239,68,68,0.25);
+      box-shadow: 0 0 60px rgba(239,68,68,0.12);
+    }
+
+    .result-card.borderline {
+      background: rgba(251,146,60,0.08);
+      border-color: rgba(251,146,60,0.25);
+      box-shadow: 0 0 60px rgba(251,146,60,0.10);
+    }
+
+    .result-card.normal {
+      background: rgba(34,197,94,0.08);
+      border-color: rgba(34,197,94,0.25);
+      box-shadow: 0 0 60px rgba(34,197,94,0.12);
+    }
+
+    .result-icon {
+      font-size: 3rem;
+      flex-shrink: 0;
+      animation: pop-in 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    @keyframes pop-in {
+      from { transform: scale(0); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+
+    .result-text h3 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .result-card.distress .result-text h3 { color: #f87171; }
+    .result-card.borderline .result-text h3 { color: #fb923c; }
+    .result-card.normal   .result-text h3 { color: #4ade80; }
+
+    .result-text p {
+      margin-top: 6px;
+      font-size: 0.87rem;
+      color: var(--muted);
+    }
+
+    .confidence-bar-wrap {
+      margin-top: 14px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .confidence-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .confidence-bar {
+      height: 6px;
+      border-radius: 99px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.8s cubic-bezier(0.25,1,0.5,1);
+    }
+
+    .distress    .confidence-fill.distress-fill { background: linear-gradient(90deg, #ef4444, #f97316); }
+    .borderline  .confidence-fill.distress-fill { background: linear-gradient(90deg, #f97316, #facc15); }
+    .normal      .confidence-fill.distress-fill { background: linear-gradient(90deg, #ef4444, #f97316); }
+    .confidence-fill.normal-fill  { background: linear-gradient(90deg, #22c55e, #10b981); }
+
+    /* ── Error Toast ────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1e1e2e;
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #f87171;
+      padding: 12px 22px;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-wrap">
+      <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zm7 9a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-2 0 7 7 0 0 0 6 6.93V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.07A7 7 0 0 0 19 11z"/></svg>
+    </div>
+    <h1>PanicSense AI</h1>
+    <p class="subtitle">Real-time voice distress detection powered by machine learning</p>
+  </header>
+
+  <!-- Cards -->
+  <div class="cards">
+
+    <!-- Record Card -->
+    <div class="card" id="record-card">
+      <span class="card-label">Live Mic</span>
+      <h2>Record Voice</h2>
+      <p>Click the button to start. Click again to stop and analyze.</p>
+
+      <div class="mic-wrap" id="mic-wrap">
+        <div class="pulse-ring"></div>
+        <button id="record-btn" title="Start/Stop Recording" aria-label="Start recording">
+          <!-- Mic icon -->
+          <svg class="mic-icon" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3zm7 9a1 1 0 0 0-2 0 5 5 0 0 1-10 0 1 1 0 0 0-2 0 7 7 0 0 0 6 6.93V20H9a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-2v-2.07A7 7 0 0 0 19 11z"/></svg>
+          <!-- Stop icon -->
+          <svg class="stop-icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+        </button>
+      </div>
+
+      <div class="timer" id="timer">0:00</div>
+      <canvas id="waveform"></canvas>
+
+      <div class="spinner-wrap" id="record-spinner">
+        <div class="spinner"></div>
+        <p>Analyzing recording…</p>
+      </div>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card" id="upload-card">
+      <span class="card-label">File Upload</span>
+      <h2>Upload Audio</h2>
+      <p>Drop a .wav, .mp3, .flac, or .ogg file to analyze.</p>
+
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.m4a" aria-label="Upload audio file" />
+        <svg viewBox="0 0 24 24"><path d="M12 2a1 1 0 0 1 .707.293l4 4a1 1 0 0 1-1.414 1.414L13 5.414V16a1 1 0 0 1-2 0V5.414L8.707 7.707A1 1 0 1 1 7.293 6.293l4-4A1 1 0 0 1 12 2zM4 17a1 1 0 0 1 1 1v2h14v-2a1 1 0 0 1 2 0v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a1 1 0 0 1 1-1z"/></svg>
+        <span id="upload-hint">Drag &amp; drop or click to browse</span>
+        <span class="file-name" id="file-name"></span>
+      </div>
+
+      <div class="spinner-wrap" id="upload-spinner">
+        <div class="spinner"></div>
+        <p>Analyzing audio file…</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Result -->
+  <div id="result">
+    <div class="result-card" id="result-card">
+      <div class="result-icon" id="result-icon"></div>
+      <div class="result-text">
+        <h3 id="result-label"></h3>
+        <p id="result-desc"></p>
+        <div class="confidence-bar-wrap">
+          <div>
+            <div class="confidence-label">
+              <span>Distress probability</span>
+              <span id="conf-pct"></span>
+            </div>
+            <div class="confidence-bar">
+              <div class="confidence-fill distress-fill" id="conf-fill"></div>
+            </div>
+          </div>
+          <div>
+            <div class="confidence-label">
+              <span>Normal probability</span>
+              <span id="conf-pct-normal"></span>
+            </div>
+            <div class="confidence-bar">
+              <div class="confidence-fill normal-fill" id="conf-fill-normal"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+<script>
+  /* ─── WAV encoding helpers ─────────────────────────── */
+  function writeStr(view, offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+  function floatTo16(out, offset, input) {
+    for (let i = 0; i < input.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      out.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+  }
+  function encodeWAV(samples, sampleRate) {
+    const buf = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buf);
+    writeStr(view, 0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeStr(view, 8, 'WAVE');
+    writeStr(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);       // PCM
+    view.setUint16(22, 1, true);       // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(view, 36, 'data');
+    view.setUint32(40, samples.length * 2, true);
+    floatTo16(view, 44, samples);
+    return buf;
+  }
+  async function blobToWavBlob(blob) {
+    const arrBuf = await blob.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await audioCtx.decodeAudioData(arrBuf);
+    audioCtx.close();
+    const channel = decoded.getChannelData(0);
+    const wavBuf = encodeWAV(channel, decoded.sampleRate);
+    return new Blob([wavBuf], { type: 'audio/wav' });
+  }
+
+  /* ─── Toast ────────────────────────────────────────── */
+  const toast = document.getElementById('toast');
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3500);
+  }
+
+  /* ─── API call ─────────────────────────────────────── */
+  async function predict(audioBlob, spinnerEl) {
+    spinnerEl.classList.add('show');
+    try {
+      const form = new FormData();
+      form.append('audio', audioBlob, 'audio.wav');
+      const res = await fetch('/api/predict', { method: 'POST', body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+      const data = await res.json();
+      showResult(data);
+    } catch (e) {
+      showToast('⚠️ ' + e.message);
+    } finally {
+      spinnerEl.classList.remove('show');
+    }
+  }
+
+  /* ─── Result display ───────────────────────────────── */
+  const resultEl   = document.getElementById('result');
+  const resultCard = document.getElementById('result-card');
+  const resultIcon = document.getElementById('result-icon');
+  const resultLabel= document.getElementById('result-label');
+  const resultDesc = document.getElementById('result-desc');
+  const confPct       = document.getElementById('conf-pct');
+  const confFill      = document.getElementById('conf-fill');
+  const confPctNormal = document.getElementById('conf-pct-normal');
+  const confFillNormal= document.getElementById('conf-fill-normal');
+
+  function showResult({ is_distress, confidence, normal_confidence }) {
+    // borderline = distress 30-49% (flagged but not strongly)
+    const isBorderline = is_distress && confidence < 50;
+    const stateClass = is_distress ? (isBorderline ? 'borderline' : 'distress') : 'normal';
+
+    resultCard.className = 'result-card ' + stateClass;
+    resultIcon.textContent = is_distress ? (isBorderline ? '⚠️' : '🚨') : '✅';
+    resultLabel.textContent = is_distress
+      ? (isBorderline ? 'BORDERLINE — Possible Distress' : 'EMERGENCY DETECTED')
+      : 'Normal Voice';
+    resultDesc.textContent = is_distress
+      ? (isBorderline
+          ? 'Some distress patterns detected. Could be emotional speech or raised voice.'
+          : 'Strong signs of distress or panic detected in this audio.')
+      : 'No signs of distress detected. Voice appears calm and normal.';
+
+    confPct.textContent = confidence + '%';
+    confPctNormal.textContent = (normal_confidence ?? (100 - confidence)) + '%';
+
+    resultEl.classList.add('show');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      confFill.style.width = confidence + '%';
+      confFillNormal.style.width = (normal_confidence ?? (100 - confidence)) + '%';
+    }));
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /* ─── Recording ─────────────────────────────────────── */
+  const recordBtn    = document.getElementById('record-btn');
+  const micWrap      = document.getElementById('mic-wrap');
+  const timerEl      = document.getElementById('timer');
+  const waveformEl   = document.getElementById('waveform');
+  const recordSpinner= document.getElementById('record-spinner');
+
+  let mediaRecorder, recordChunks = [], timerInterval;
+  let analyser, animFrame, audioCtx;
+  let isRecording = false;
+
+  const ctx2d = waveformEl.getContext('2d');
+
+  function drawWave() {
+    if (!analyser) return;
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(buf);
+    const W = waveformEl.width, H = waveformEl.height;
+    ctx2d.clearRect(0, 0, W, H);
+    ctx2d.lineWidth = 2;
+    ctx2d.strokeStyle = '#ef4444';
+    ctx2d.beginPath();
+    const step = W / buf.length;
+    buf.forEach((v, i) => {
+      const y = (v / 128) * (H / 2);
+      i === 0 ? ctx2d.moveTo(0, y) : ctx2d.lineTo(i * step, y);
+    });
+    ctx2d.stroke();
+    animFrame = requestAnimationFrame(drawWave);
+  }
+
+  function startTimer() {
+    let s = 0;
+    timerEl.classList.add('active');
+    timerInterval = setInterval(() => {
+      s++;
+      timerEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    timerEl.textContent = '0:00';
+    timerEl.classList.remove('active');
+  }
+
+  recordBtn.addEventListener('click', async () => {
+    if (!isRecording) {
+      // Start
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+
+        // Size canvas
+        waveformEl.width  = waveformEl.offsetWidth;
+        waveformEl.height = waveformEl.offsetHeight;
+        waveformEl.classList.add('visible');
+        drawWave();
+
+        recordChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => e.data.size && recordChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          cancelAnimationFrame(animFrame);
+          ctx2d.clearRect(0, 0, waveformEl.width, waveformEl.height);
+          waveformEl.classList.remove('visible');
+          audioCtx.close();
+          stream.getTracks().forEach(t => t.stop());
+
+          const raw = new Blob(recordChunks, { type: mediaRecorder.mimeType });
+          let wavBlob;
+          try { wavBlob = await blobToWavBlob(raw); }
+          catch { wavBlob = raw; } // fallback: send as-is
+
+          await predict(wavBlob, recordSpinner);
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        recordBtn.classList.add('recording-active');
+        micWrap.classList.add('recording');
+        recordBtn.setAttribute('aria-label', 'Stop recording');
+        startTimer();
+      } catch (e) {
+        showToast('Microphone access denied or not available.');
+      }
+    } else {
+      // Stop
+      mediaRecorder.stop();
+      isRecording = false;
+      recordBtn.classList.remove('recording-active');
+      micWrap.classList.remove('recording');
+      recordBtn.setAttribute('aria-label', 'Start recording');
+      stopTimer();
+    }
+  });
+
+  /* ─── File Upload ────────────────────────────────────── */
+  const fileInput    = document.getElementById('file-input');
+  const uploadZone   = document.getElementById('upload-zone');
+  const uploadSpinner= document.getElementById('upload-spinner');
+  const fileNameEl   = document.getElementById('file-name');
+  const uploadHint   = document.getElementById('upload-hint');
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    fileNameEl.textContent = file.name;
+    uploadHint.style.display = 'none';
+    predict(file, uploadSpinner);
+  });
+
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    fileNameEl.textContent = file.name;
+    uploadHint.style.display = 'none';
+    predict(file, uploadSpinner);
+  });
+</script>
+
+</body>
+</html>

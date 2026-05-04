@@ -1,0 +1,4 @@
+dataset/
+train_model.py
+live_predict.py
+.git/
