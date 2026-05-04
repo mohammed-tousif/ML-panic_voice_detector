@@ -605,8 +605,8 @@
   const confFillNormal= document.getElementById('conf-fill-normal');
 
   function showResult({ is_distress, confidence, normal_confidence }) {
-    // borderline = distress 30-49% (flagged but not strongly)
-    const isBorderline = is_distress && confidence < 50;
+    // borderline = distress 45-59%; strong distress >= 60%
+    const isBorderline = is_distress && confidence < 60;
     const stateClass = is_distress ? (isBorderline ? 'borderline' : 'distress') : 'normal';
 
     resultCard.className = 'result-card ' + stateClass;

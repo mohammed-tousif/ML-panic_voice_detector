@@ -21,8 +21,20 @@ with open(os.path.join(BASE_DIR, "model.pkl"), "rb") as f:
     model = pickle.load(f)
 
 
+def preprocess_audio(audio):
+    """Normalize amplitude and apply pre-emphasis to reduce mic-vs-studio mismatch."""
+    # 1. Peak-normalize to -3 dBFS so mic level differences don't affect MFCCs
+    peak = np.max(np.abs(audio))
+    if peak > 0:
+        audio = audio / peak * 0.707  # -3 dBFS
+    # 2. Pre-emphasis filter (standard in speech processing)
+    audio = np.append(audio[0], audio[1:] - 0.97 * audio[:-1])
+    return audio
+
+
 def extract_features(file_path):
     audio, sample_rate = librosa.load(file_path, duration=3, mono=True)
+    audio = preprocess_audio(audio)
     mfcc = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=40)
     return np.mean(mfcc.T, axis=0)
 
@@ -54,8 +66,8 @@ def predict():
         distress_conf = float(proba[classes.index('Distress')])
         normal_conf   = float(proba[classes.index('Normal')])
 
-        # Sensitive threshold: flag Distress at 30% instead of default 50%
-        DISTRESS_THRESHOLD = 0.30
+        # Threshold: 45% — safe for real mic audio after normalization
+        DISTRESS_THRESHOLD = 0.45
         is_distress = distress_conf >= DISTRESS_THRESHOLD
         label = 'Distress' if is_distress else 'Normal'
 
