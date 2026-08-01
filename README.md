@@ -30,19 +30,32 @@ Audio (.wav) → librosa.load() → MFCC (40 coefficients) → Mean over time �
 ```
 
 ### 3. Model Training
-A **Random Forest Classifier** (100 estimators) is trained on these features with an 80/20 train-test split. The trained model is saved as `model.pkl`.
+A **Random Forest Classifier** (300 estimators) is trained on deduplicated recordings. Speakers are isolated across train, validation, and test sets. Conservative gain, noise, and time-shift augmentation is applied only to development recordings. The validation speakers select a distress threshold subject to a minimum precision target; the untouched test speakers provide the final metrics. The versioned model and tuned threshold are saved together in `model.pkl`.
 
 ### 4. Prediction Pipeline
 ```
 Input audio → Feature extraction (MFCC) → model.predict() → "Distress" or "Normal"
 ```
-The model uses a **30% sensitivity threshold** — if the Distress probability exceeds 30%, the audio is flagged (instead of the default 50%), making it more sensitive to real-world emotional speech.
+The web app uses the threshold saved with the trained model. It is tuned on validation speakers to improve distress recall while maintaining at least 50% validation precision. It is not a calibrated emergency-risk score.
+
+### Current Model Results
+
+The checked-in artifact was trained on **1,439 content-unique recordings** and uses a **25.8% distress threshold** selected from validation speakers.
+
+| Untouched-speaker metric | Result |
+|---|---:|
+| Accuracy | 68.3% |
+| Distress precision | 43% |
+| Distress recall | 61% |
+
+The lower threshold raises distress recall from the previous 39% to 61%, at the cost of more false alarms. Exact speaker splits, the confusion matrix, classification report, and precision-recall curve are stored in `training_metrics.json`.
 
 ### 5. Web Interface
 - **Live Recording**: Browser captures mic audio via `MediaRecorder API`, converts it to WAV using `AudioContext`, then sends it to the Flask backend.
-- **File Upload**: User provides a `.wav/.mp3/.flac/.ogg` file, sent directly to the backend.
-- **Backend** (`api/index.py`): Flask API receives audio, extracts MFCCs, runs prediction, and returns JSON with `prediction`, `confidence`, and `normal_confidence`.
-- **Frontend** (`index.html`): Shows result as 🚨 Emergency, ⚠️ Borderline, or ✅ Normal with animated confidence bars.
+- **File Upload**: User provides a supported audio file up to 10 MiB, sent directly to the backend.
+- **Shared pipeline** (`audio_pipeline.py`): Defines the audio duration, supported formats, upload limit, threshold, and MFCC extraction used throughout the project.
+- **Backend** (`api/index.py`): Flask API validates uploads, extracts MFCCs, runs prediction, and returns JSON with `prediction`, `confidence`, and `normal_confidence`.
+- **Frontend** (`index.html`): Shows normal, possible-distress, or strong-distress patterns with animated confidence bars.
 
 ---
 
@@ -52,13 +65,18 @@ The model uses a **30% sensitivity threshold** — if the Distress probability e
 ML-panic_voice_detector/
 ├── api/
 │   └── index.py          # Flask backend API
+├── audio_pipeline.py     # Shared features and training-only augmentation
+├── dataset_tools.py      # Manifest validation and content deduplication
+├── prepare_dataset.py    # Safe custom recording importer
 ├── dataset/
 │   ├── Actor_01/         # RAVDESS audio files (Actor 01–24)
 │   └── ...
 ├── index.html            # Web frontend (UI)
-├── live_predict.py       # CLI prediction script (file or mic)
+├── live_predict.py       # File-based CLI prediction script
+├── model_artifact.py     # Versioned model and threshold loading
 ├── train_model.py        # Model training script
 ├── model.pkl             # Pre-trained Random Forest model
+├── training_metrics.json # Split, threshold, test metrics, and PR curve
 ├── requirements.txt      # Python dependencies
 ├── vercel.json           # Vercel deployment config
 └── .vercelignore         # Files excluded from deployment
@@ -86,6 +104,25 @@ Only needed if you want to retrain from scratch. The `model.pkl` is already incl
 python train_model.py
 ```
 
+### Add Real Recordings
+
+Create a CSV using [sample_manifest.example.csv](sample_manifest.example.csv):
+
+```csv
+file,label,speaker_id
+recordings/person_01_panic.wav,Distress,person_01
+recordings/person_01_normal.wav,Normal,person_01
+```
+
+Paths must be relative to the CSV and labels must be `Normal` or `Distress`. Every person needs a stable, non-identifying `speaker_id`; this is what prevents speaker leakage.
+
+```bash
+python prepare_dataset.py path/to/samples.csv --output dataset/custom
+python train_model.py
+```
+
+The importer decodes every file, rejects unsafe paths and invalid labels, deduplicates content with SHA-256, and creates `dataset/custom/labels.csv`. Do not place augmented copies in the manifest—the trainer creates augmentation only after splitting speakers.
+
 ### Step 3 — Run the Web App (Recommended)
 
 ```bash
@@ -106,22 +143,15 @@ You will see two options:
 If you prefer the command line without the web interface:
 
 ```bash
-python live_predict.py
+python live_predict.py dataset/Actor_01/03-01-06-01-02-01-01.wav
 ```
 
-It will prompt you to enter a file path:
-```
-Enter dataset audio file path: dataset/Actor_01/03-01-06-01-02-01-01.wav
-```
+Pass an audio file, a directory, or an extensionless audio path as the argument. Live microphone recording is available through the web interface.
 
-To switch to **live microphone mode**, open `live_predict.py` and replace lines 76–77:
-```python
-# Change this:
-file_path = input("Enter dataset audio file path:")
-file_path = resolve_audio_path(file_path)
+### Run Tests
 
-# To this:
-file_path = record_audio()
+```bash
+python -m unittest discover -s tests -v
 ```
 
 ---
@@ -140,6 +170,8 @@ Or connect your GitHub repository to [vercel.com](https://vercel.com) and import
 
 > **Note:** The `dataset/` folder and training scripts are excluded from deployment via `.vercelignore` to keep the bundle small.
 
+The prediction endpoint accepts `.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`, and `.webm` audio up to **10 MiB**. Invalid, empty, or oversized uploads are rejected before prediction.
+
 ---
 
 ## Limitations
@@ -147,3 +179,5 @@ Or connect your GitHub repository to [vercel.com](https://vercel.com) and import
 - Trained on **acted emotional speech** (RAVDESS), not real-world panic recordings. Real screaming may score lower than expected because the acoustic profile differs from studio-performed fear/anger.
 - Best accuracy is achieved with **clear, close-mic audio** similar to the training data.
 - Single-shot prediction — analyzes only the first 3 seconds of audio.
+- Review `training_metrics.json`, especially distress precision and recall, after every retraining run.
+- This is an experimental emotion classifier, not a validated medical, safety, or emergency-response system. Do not use it as the sole basis for emergency decisions.

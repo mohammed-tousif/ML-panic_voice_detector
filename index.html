@@ -578,7 +578,8 @@
     spinnerEl.classList.add('show');
     try {
       const form = new FormData();
-      form.append('audio', audioBlob, 'audio.wav');
+      const fallbackName = audioBlob.type.includes('webm') ? 'recording.webm' : 'recording.wav';
+      form.append('audio', audioBlob, audioBlob.name || fallbackName);
       const res = await fetch('/api/predict', { method: 'POST', body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -605,14 +606,14 @@
   const confFillNormal= document.getElementById('conf-fill-normal');
 
   function showResult({ is_distress, confidence, normal_confidence }) {
-    // borderline = distress 45-59%; strong distress >= 60%
+    // Flagged scores below 60% are visually presented as lower-confidence results.
     const isBorderline = is_distress && confidence < 60;
     const stateClass = is_distress ? (isBorderline ? 'borderline' : 'distress') : 'normal';
 
     resultCard.className = 'result-card ' + stateClass;
     resultIcon.textContent = is_distress ? (isBorderline ? '⚠️' : '🚨') : '✅';
     resultLabel.textContent = is_distress
-      ? (isBorderline ? 'BORDERLINE — Possible Distress' : 'EMERGENCY DETECTED')
+      ? (isBorderline ? 'Possible Distress Pattern' : 'Strong Distress Pattern')
       : 'Normal Voice';
     resultDesc.textContent = is_distress
       ? (isBorderline
@@ -738,13 +739,21 @@
   const uploadSpinner= document.getElementById('upload-spinner');
   const fileNameEl   = document.getElementById('file-name');
   const uploadHint   = document.getElementById('upload-hint');
+  const maxUploadBytes = 10 * 1024 * 1024;
 
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files[0];
+  function uploadFile(file) {
     if (!file) return;
+    if (file.size > maxUploadBytes) {
+      showToast('Audio files must be 10 MiB or smaller.');
+      return;
+    }
     fileNameEl.textContent = file.name;
     uploadHint.style.display = 'none';
     predict(file, uploadSpinner);
+  }
+
+  fileInput.addEventListener('change', () => {
+    uploadFile(fileInput.files[0]);
   });
 
   uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
@@ -752,11 +761,7 @@
   uploadZone.addEventListener('drop', e => {
     e.preventDefault();
     uploadZone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    fileNameEl.textContent = file.name;
-    uploadHint.style.display = 'none';
-    predict(file, uploadSpinner);
+    uploadFile(e.dataTransfer.files[0]);
   });
 </script>
 

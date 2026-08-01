@@ -1,6 +1,5 @@
 flask
-flask-cors
 librosa
-scikit-learn
+scikit-learn==1.8.0
 numpy
 soundfile

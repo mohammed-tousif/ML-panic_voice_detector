@@ -1,100 +1,83 @@
-import sounddevice as sd
-from scipy.io.wavfile import write
-import librosa
-import numpy as np
-import pickle
-import os
-import sys
+import argparse
+from pathlib import Path
+
+from audio_pipeline import SUPPORTED_AUDIO_EXTENSIONS, extract_features
+from model_artifact import load_model_artifact
 
 # Load trained model
-model = pickle.load(open("model.pkl", "rb"))
+PROJECT_DIR = Path(__file__).resolve().parent
+model, distress_threshold = load_model_artifact(PROJECT_DIR / "model.pkl")
 
-# Audio recording settings
-DURATION = 3  # seconds
-SAMPLE_RATE = 22050
-
-def record_audio(filename="live_audio.wav"):
-    print("🎙️ Recording... Speak now!")
-    audio = sd.rec(int(DURATION * SAMPLE_RATE), 
-                   samplerate=SAMPLE_RATE, 
-                   channels=1)
-    sd.wait()
-    write(filename, SAMPLE_RATE, audio)
-    print("✅ Recording finished.")
-    return filename
-
-def extract_features(file_path):
-    audio, sample_rate = librosa.load(file_path, duration=3)
-    mfcc = librosa.feature.mfcc(y=audio, sr=sample_rate, n_mfcc=40)
-    return np.mean(mfcc.T, axis=0)
+def first_audio_file(directory):
+    files = sorted(
+        file_path
+        for file_path in directory.iterdir()
+        if file_path.suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+    )
+    return files[0] if files else None
 
 
-def resolve_audio_path(path):
-    """Return a valid audio file path.
-    - Expands user, strips quotes.
-    - If path exists and is a directory, pick first audio file inside.
-    - If path doesn't exist, try common extensions (.wav, .flac, .mp3, .ogg).
-    - If still not found, try to match files starting with the given basename.
-    Exits with an error message if no file found.
-    """
-    if not path:
-        print("No path provided.")
-        sys.exit(1)
-
-    path = os.path.expanduser(path).strip().strip('"').strip("'")
-
-    if os.path.exists(path):
-        if os.path.isdir(path):
-            for ext in ('.wav', '.flac', '.mp3', '.ogg'):
-                files = [f for f in os.listdir(path) if f.lower().endswith(ext)]
-                if files:
-                    return os.path.join(path, files[0])
-            print(f"No audio files found in directory: {path}")
-            sys.exit(1)
-        return path
-
-    # Try adding common extensions
-    for ext in ('.wav', '.flac', '.mp3', '.ogg'):
-        candidate = path + ext
-        if os.path.exists(candidate):
+def extension_match(path):
+    for extension in SUPPORTED_AUDIO_EXTENSIONS:
+        candidate = Path(f"{path}{extension}")
+        if candidate.is_file():
             return candidate
+    return None
 
-    # Try matching files that start with the provided basename in the same directory
-    dirname = os.path.dirname(path) or os.getcwd()
-    base = os.path.basename(path)
+
+def prefix_match(path):
+    directory = path.parent if str(path.parent) else Path.cwd()
+    if not directory.is_dir():
+        return None
+    matches = sorted(
+        candidate
+        for candidate in directory.glob(f"{path.name}*")
+        if candidate.is_file()
+        and candidate.suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+    )
+    return matches[0] if matches else None
+
+
+def resolve_audio_path(raw_path):
+    """Resolve a user-provided path, directory, or extensionless audio name."""
+    if not raw_path:
+        raise FileNotFoundError("No path provided.")
+
+    path = Path(raw_path.strip().strip('"').strip("'")).expanduser()
+    if path.is_file():
+        return path
+    if path.is_dir():
+        match = first_audio_file(path)
+        if match:
+            return match
+        raise FileNotFoundError(f"No audio files found in directory: {path}")
+
+    match = extension_match(path) or prefix_match(path)
+    if match:
+        return match
+    raise FileNotFoundError(f"Audio file not found: {path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Classify an audio recording.")
+    parser.add_argument("audio", help="Audio file, directory, or extensionless path")
+    arguments = parser.parse_args()
     try:
-        matches = [os.path.join(dirname, f) for f in os.listdir(dirname) if f.startswith(base)]
-        if matches:
-            return matches[0]
-    except FileNotFoundError:
-        pass
+        file_path = resolve_audio_path(arguments.audio)
+    except FileNotFoundError as error:
+        print(f"Error: {error}")
+        return 1
 
-    print(f"Error: audio file not found: {path}")
-    sys.exit(1)
+    features = extract_features(file_path).reshape(1, -1)
+    distress_index = model.classes_.tolist().index("Distress")
+    distress_probability = model.predict_proba(features)[0][distress_index]
+    prediction = "Distress" if distress_probability >= distress_threshold else "Normal"
+    print("\nPrediction result:")
+    print("Distress pattern detected" if prediction == "Distress" else "Normal voice detected")
+    print(f"Distress score: {distress_probability:.1%}")
+
+    return 0
 
 
-file_path = input("Enter dataset audio file path:")
-file_path = resolve_audio_path(file_path)
-
-# Extract features
-features = extract_features(file_path)
-features = features.reshape(1, -1)
-
-# Predict
-prediction = model.predict(features)
-
-print("\n🔍 Prediction Result:")
-
-if prediction[0] == "Distress":
-    print("⚠️ EMERGENCY SITUATION DETECTED")
-else:
-    print("😊 Normal Voice Detected")
-
-# Optional: delete recorded file only if it is the temporary recorder output
-# This prevents accidental deletion of dataset or user files.
-if os.path.exists(file_path):
-    if os.path.basename(file_path) == "live_audio.wav":
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            print(f"Warning: failed to delete {file_path}: {e}")
+if __name__ == "__main__":
+    raise SystemExit(main())
