@@ -1,10 +1,38 @@
-# PanicSense AI — Voice Distress Detector
+# PanicSense AI — Voice Distress Pattern Detector
 
-A machine learning project that analyzes voice audio and detects whether the speaker is in **distress/panic** or speaking in a **normal** tone. Built using the RAVDESS Emotional Speech Dataset and a Random Forest classifier.
+**Live application:** [https://panic-voice-detector.vercel.app](https://panic-voice-detector.vercel.app)
+
+PanicSense AI is an experimental machine-learning web application that analyzes a short voice recording and estimates whether its acoustic pattern is closer to **distress** or **normal speech**. A user can record from the browser or upload an audio file, and the application returns a distress score with a clear visual result.
+
+The project was created to explore whether classical audio features and machine learning can recognize emotional stress patterns in speech. It demonstrates the complete lifecycle of an audio ML system: collecting and validating labeled data, preventing speaker leakage, extracting features, training and evaluating a model, serving predictions through an API, and presenting results in an accessible web interface.
+
+> **Important:** This is a research and educational prototype trained primarily on acted emotional speech. It is not a medical device, emergency service, or replacement for human judgment. Never use its prediction as the sole basis for an emergency decision.
+
+## What a User Can Do
+
+- Open the [live web application](https://panic-voice-detector.vercel.app) on a phone or computer.
+- Record a voice sample using the device microphone.
+- Upload a `.wav`, `.mp3`, `.flac`, `.ogg`, `.m4a`, or `.webm` audio file up to 10 MiB.
+- Receive a normal, possible-distress, or strong-distress result.
+- View separate distress and normal confidence scores.
+
+Only the first three seconds of each recording are analyzed. Uploaded files are stored temporarily for processing and deleted immediately after the request finishes.
+
+## End-to-End Workflow
+
+1. The browser records audio or accepts a file upload.
+2. The Flask API validates the file type and 10 MiB size limit.
+3. `librosa` decodes up to three seconds of mono audio.
+4. The shared pipeline extracts 40 mean MFCC features.
+5. The Random Forest calculates probabilities for `Distress` and `Normal`.
+6. The API compares the distress probability with the threshold stored inside the trained model artifact.
+7. The frontend displays the result and both confidence scores.
+
+The training workflow is kept separate from inference. It validates labels, removes duplicate audio by SHA-256 content, isolates speakers across train/validation/test splits, applies augmentation only to development data, tunes the threshold on validation speakers, and reports final metrics on untouched test speakers.
 
 ---
 
-## How It Works
+## Technical Overview
 
 ### 1. Dataset
 The project uses the **RAVDESS (Ryerson Audio-Visual Database of Emotional Speech and Song)** dataset. It contains 24 professional actors (12 male, 12 female) performing 8 emotions:
